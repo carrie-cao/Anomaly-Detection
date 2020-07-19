@@ -1,0 +1,106 @@
+---
+title: "CUSUM technique"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Using July through October daily-high-temperature data for Atlanta for 1996 through 2015, use a CUSUM approach to identify when unofficial summer ends (i.e., when the weather starts cooling off) each year.
+CUSUM (or cumulative sum control chart) is a sequential analysis technique used for monitoring change detection.
+
+```{r}
+# Clear environment
+rm(list = ls())
+#install.packages(qcc)
+library(qcc)
+
+# Reading the data
+data <- read.table("temps.txt", stringsAsFactors = FALSE, header = TRUE)
+head(data)
+
+# Create matrix without day column 
+temps = matrix(data[,2:ncol(data)])
+# Create a vector of this data
+temps_vec <- as.vector(unlist(temps))
+# Turn the vector into a time series object and view plot
+myts <- ts(temps_vec,start=1996,frequency=1)
+plot(myts)
+
+# Determine the summer mean and standard deviation value we want to use
+# We just used the month of July as a base average summer temperature with no change
+avg_summer <- rep(0,nrow(temps))
+sd_summer <- rep(0,nrow(temps))
+for (i in 1:nrow(temps)){
+  avg_summer[i] <- mean(temps[[i]][1:30])
+  sd_summer[i] <- sd(temps[[i]][1:30])
+}
+
+# Use the cusum function
+CUSUMmodels <- vector(mode="list", length=nrow(temps)) 
+CUSUMviolations <- vector(mode="list", length=nrow(temps)) 
+
+```
+Loop through each year and run the CUSUM function
+center is the "target" summer temperature each year
+std.dev is the standard deviation of the summer temperature each year
+set decision.interval as the upper and lower bound in standard deviations/errors from 0 change
+set se.shift as the amount of shift to detect (which corresponds to 2*C in terms of standard deviations/errors)
+```{r}
+DI = 5 #out of control when past 5 standard deviations/errors
+SS = 6 #equals 6/2 = 3 standard deviations/errors shift
+for (i in 1:nrow(temps)){
+  CUSUMmodels[[i]] <- cusum(temps[[i]], center=avg_summer[i], std.dev = sd_summer[i], decision.interval=DI, se.shift=SS, plot = TRUE)
+  CUSUMviolations[[i]] <- CUSUMmodels[[i]]$violations$lower
+}
+
+#concerned with the lower violations since significant drops in temperature indicates transfer from summer to fall
+
+CUSUMlowest <- rep(0, nrow(temps))
+CUSUMlowesttemp <- rep(0, nrow(temps))
+for (i in 1:nrow(temps)){
+  CUSUMlowest[i] <- min(CUSUMviolations[[i]])
+  CUSUMlowesttemp[i] <- as.integer(mean(temps[[i]][1:CUSUMlowest[i]]))
+}
+
+#From the plot, an expected trend of a decrease in temperature as the day number get larger
+
+plot(CUSUMlowest,CUSUMlowesttemp)
+```
+Take the unofficial end of summer day and temperature data and use CUSUM analysis to determine if the unofficial end of summer days and summer climate are changing
+```{r}
+# Determine the mean and standard deviation value, here used the averages of the CUSUMlowest and CUSUMlowesttemp
+avg_day <- mean(CUSUMlowest)
+sd_day <- sd(CUSUMlowest)
+avg_temp <- mean(CUSUMlowesttemp)
+sd_temp <- sd(CUSUMlowesttemp)
+
+# Run the CUSUM function on unofficial end of summer day
+DI = 1 #out of control when past 1 standard deviations/errors
+SS = 1 #equals 1/2 = 1/2 standard deviations/errors shift
+
+CUSUMmodel_day <- cusum(CUSUMlowest, center=avg_day, std.dev = sd_day, decision.interval=DI, se.shift=SS, plot = TRUE)
+CUSUMviolations_day <- CUSUMmodel_day$violations
+
+#There are a few years where the unofficial end of summer changed significantly from the mean day
+
+```
+Run the CUSUM function on unofficial end of summer day average summer temperature (summer climate)
+
+```{r}
+
+DI = 3 #out of control when past 3 standard deviations/errors = about 6 degrees
+SS = 1 #equals 1/2 = 1/2 standard deviations/errors shift = about 1 degree
+
+CUSUMmodel_temp <- cusum(CUSUMlowesttemp, center=avg_temp, std.dev = sd_temp, decision.interval=DI, se.shift=SS, plot = TRUE)
+CUSUMviolations_temp <- CUSUMmodel_temp$violations
+
+#There are a few years where the summer climate drops significantly from the mean summer climate
+#These years align with the years where the unofficial end of summer day also change significantly (years 16 and 17)
+```
+
+
+
